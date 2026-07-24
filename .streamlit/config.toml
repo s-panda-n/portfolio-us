@@ -1,0 +1,39 @@
+# Bloomberg-terminal-style theme for Streamlit
+# Drop this file at: portfolio-us/.streamlit/config.toml
+
+[theme]
+base = "dark"
+
+# True black background, classic terminal feel
+backgroundColor = "#000000"
+
+# Panels / cards / widget backgrounds - slightly lifted off pure black
+secondaryBackgroundColor = "#0D1117"
+
+# Amber accent - the signature Bloomberg terminal color for interactive elements
+primaryColor = "#FF9F1C"
+
+# Off-white body text (pure white is too harsh on black for long reading)
+textColor = "#E6E6E6"
+
+# Monospace everywhere - this is the single biggest factor in the terminal look
+font = "monospace"
+
+# Sharp corners, no rounded pill-shaped widgets
+baseRadius = "none"
+buttonRadius = "none"
+
+# Thin visible borders between panels, like terminal grid lines
+showWidgetBorder = true
+borderColor = "#2A2E35"
+
+[theme.sidebar]
+backgroundColor = "#000000"
+secondaryBackgroundColor = "#0D1117"
+borderColor = "#2A2E35"
+
+[server]
+runOnSave = true
+
+[client]
+toolbarMode = "minimal"
