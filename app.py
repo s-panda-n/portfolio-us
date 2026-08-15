@@ -46,6 +46,7 @@ from agents.recommendations import generate as gen_recommendations, RISK_CONTEXT
 from data.bonds import BOND_ETFS
 from data.options import get_atm_options
 from data.portfolio import compute_portfolio_value
+from data.holdings_store import load as _load_holdings, save as _save_holdings
 from metrics.options_metrics import atm_summary
 
 apply_terminal_theme()
@@ -62,7 +63,7 @@ _FONT  = "JetBrains Mono, IBM Plex Mono, Consolas, monospace"
 # ── Session state ─────────────────────────────────────────────────────────────
 if "tickers"  not in st.session_state: st.session_state["tickers"]  = list(DEFAULT_EQUITIES)
 if "refresh"  not in st.session_state: st.session_state["refresh"]  = False
-if "holdings" not in st.session_state: st.session_state["holdings"] = []
+if "holdings" not in st.session_state: st.session_state["holdings"] = _load_holdings()
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -112,6 +113,7 @@ with st.sidebar:
                 "shares":     round(h_shares, 4),
                 "cost_basis": round(h_cost, 4),
             })
+            _save_holdings(st.session_state["holdings"])
             st.rerun()
 
     for i, h in enumerate(list(st.session_state["holdings"])):
@@ -119,6 +121,7 @@ with st.sidebar:
         r1.caption(f"`{h['ticker']}` {h['shares']:.2f} sh @ ${h['cost_basis']:.2f}")
         if r2.button("✕", key=f"rmh_{i}"):
             st.session_state["holdings"].pop(i)
+            _save_holdings(st.session_state["holdings"])
             st.rerun()
     st.markdown("---")
 
