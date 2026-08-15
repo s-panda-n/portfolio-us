@@ -393,6 +393,43 @@ with st.container(border=True):
     st.dataframe(result["metrics"], width="stretch")
 
 
+# ── Stock Screener ────────────────────────────────────────────────────────────
+_screener_df = result.get("screener", pd.DataFrame())
+with st.container(border=True):
+    panel_header("STOCK SCREENER", "Top picks across 55+ stocks — ranked by Sharpe · momentum · sector rotation")
+    if _screener_df.empty:
+        st.caption("Screener data unavailable.")
+    else:
+        st.caption(
+            "Composite score = 45% Sharpe (risk-adjusted return) + "
+            "35% 1-year price momentum + 20% sector 1-month rotation. "
+            "Add any ticker to your watchlist via the sidebar to run the optimizer on it."
+        )
+
+        # Sector filter
+        sectors = ["ALL"] + sorted(_screener_df["sector"].unique().tolist())
+        sel_sector = st.selectbox("Filter by sector", sectors, index=0, label_visibility="collapsed")
+        view_df = _screener_df if sel_sector == "ALL" else _screener_df[_screener_df["sector"] == sel_sector]
+
+        # Colour composite score column
+        def _score_color(val: float) -> str:
+            if val >= 0.7:
+                return f"color: {_GREEN}"
+            if val >= 0.4:
+                return f"color: {_AMBER}"
+            return f"color: {_RED}"
+
+        styled = (
+            view_df[["rank", "ticker", "sector", "sharpe", "return_1y_%",
+                      "sector_1m_%", "sentiment", "composite_score", "description"]]
+            .style
+            .applymap(_score_color, subset=["composite_score"])
+            .format({"composite_score": "{:.3f}", "return_1y_%": "{:+.1f}%",
+                     "sector_1m_%": "{:+.1f}%", "sharpe": "{:.2f}"})
+        )
+        st.dataframe(styled, hide_index=True, width="stretch")
+
+
 # ── Row 5: Fixed income ────────────────────────────────────────────────────────
 with st.container(border=True):
     panel_header("FIXED INCOME", "Bond ETF proxies + Treasury yield curve")
