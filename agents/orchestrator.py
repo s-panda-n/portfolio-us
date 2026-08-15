@@ -17,7 +17,6 @@ from data.macro import (
     get_vix, get_sector_momentum, get_earnings_calendar, get_macro_news,
     TICKER_TO_SECTOR_ETF,
 )
-from data.screener import run_screener
 from metrics.returns import daily_returns, cumulative_returns
 from metrics.risk import sharpe, sortino, max_drawdown, correlation_matrix
 from allocation.optimizer import allocate, efficient_frontier
@@ -265,18 +264,6 @@ def run_pipeline(
         errors.append(f"Earnings calendar error: {e}")
         earnings_df = pd.DataFrame(columns=["ticker", "earnings_date", "days_until"])
 
-    # ── 15. Broad stock screener (55+ tickers, discovery layer) ──────────────
-    try:
-        screener_df = run_screener(
-            period="1y",
-            top_n=20,
-            sector_returns=sector_returns,
-            sentiment_map=sentiment_map,
-        )
-    except Exception as e:
-        errors.append(f"Screener error: {e}")
-        screener_df = pd.DataFrame()
-
     return {
         "allocation":        alloc_df,
         "metrics":           metrics_df,
@@ -291,7 +278,6 @@ def run_pipeline(
         "vix":               vix_info,
         "sector_momentum":   sector_df,
         "earnings_calendar": earnings_df,
-        "screener":          screener_df,
         "last_prices":       last_prices,
         "pct_changes":       pct_changes,
         "reasoning":         reasoning,

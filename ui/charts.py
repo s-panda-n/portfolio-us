@@ -36,10 +36,15 @@ def _base(fig: go.Figure, height: int = 300) -> go.Figure:
     return fig
 
 
-def efficient_frontier_chart(frontier_df: pd.DataFrame, optimal: dict | None = None) -> go.Figure:
+def efficient_frontier_chart(
+    frontier_df: pd.DataFrame,
+    optimal: dict | None = None,
+    current_point: dict | None = None,
+) -> go.Figure:
     """
     Scatter of Monte-Carlo portfolios coloured by Sharpe ratio.
     optimal: dict with keys 'return' and 'volatility' (fractions, not percent).
+    current_point: dict with 'return' and 'volatility' for user's current portfolio (blue diamond).
     """
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -56,16 +61,27 @@ def efficient_frontier_chart(frontier_df: pd.DataFrame, optimal: dict | None = N
         ),
         hovertemplate="Vol: %{x:.1f}%  Ret: %{y:.1f}%<extra></extra>",
     ))
+    if current_point:
+        ret_c = current_point.get("return", 0.0) * 100
+        vol_c = current_point.get("volatility", 0.0) * 100
+        fig.add_trace(go.Scatter(
+            x=[vol_c], y=[ret_c],
+            mode="markers",
+            name="◆ CURRENT",
+            marker=dict(symbol="diamond", size=16, color="#4FC3F7",
+                        line=dict(color=TEXT, width=1)),
+            hovertemplate=f"CURRENT  Vol:{vol_c:.1f}%  Ret:{ret_c:.1f}%<extra></extra>",
+        ))
     if optimal:
         ret = optimal.get("return", 0.0) * 100
         vol = optimal.get("volatility", 0.0) * 100
         fig.add_trace(go.Scatter(
             x=[vol], y=[ret],
             mode="markers",
-            name="★ OPTIMAL",
+            name="★ SUGGESTED",
             marker=dict(symbol="star", size=18, color=GREEN,
                         line=dict(color=TEXT, width=1)),
-            hovertemplate=f"OPTIMAL  Vol:{vol:.1f}%  Ret:{ret:.1f}%<extra></extra>",
+            hovertemplate=f"SUGGESTED  Vol:{vol:.1f}%  Ret:{ret:.1f}%<extra></extra>",
         ))
     fig.update_layout(
         xaxis=dict(title="VOLATILITY (%)", gridcolor=GRID),
