@@ -22,17 +22,25 @@ A Bloomberg-terminal-style multi-asset portfolio tracker built in Python + Strea
 
 ## Dashboard layout
 
+
 ```
 [Ticker tape]
 [MY PORTFOLIO — P&L, value chart, positions table]
 [Top metrics: Capital · Ann. Return · Volatility · Sharpe · Max Drawdown]
+<img width="1465" height="835" alt="image" src="https://github.com/user-attachments/assets/9d85dc0f-5558-4be6-94a3-192ad9f7d215" />
 [▼ MACRO SIGNALS — your holdings VIX | suggested portfolio context]
 [RECOMMENDATIONS — BUY/SELL/TRIM/HOLD · sector groups · inline options]
+<img width="1454" height="832" alt="image" src="https://github.com/user-attachments/assets/14d4c7d7-1f2e-4179-9be3-d4f2738ace23" />
+
 [EFFICIENT FRONTIER — current ◆ vs suggested ★]
 [STOCK SCREENER — 282 tickers · sector filter · BULL/BEAR/BUY/SELL]
+<img width="1156" height="761" alt="image" src="https://github.com/user-attachments/assets/8c505214-e2f7-4183-b844-0e6936ca011c" />
+
 [SENTIMENT — badge grid with ticker picker]
 [TIPS — VIX hedge · sector rotation · macro article]
 [▶ ALLOCATION REASONING — optimizer decision log]
+<img width="1164" height="408" alt="image" src="https://github.com/user-attachments/assets/14639cb4-ba7d-4467-b8d7-e64b8cc86eec" />
+
 ```
 
 ---
