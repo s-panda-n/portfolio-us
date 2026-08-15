@@ -16,8 +16,8 @@ from datetime import date, timedelta
 def get_news(
     tickers: list[str],
     api_key: str | None = None,
-    days_back: int = 7,
-    max_per_ticker: int = 5,
+    days_back: int = 30,
+    max_per_ticker: int = 10,
 ) -> pd.DataFrame:
     """
     Fetch recent news from Finnhub for each ticker.

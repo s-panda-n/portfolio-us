@@ -42,7 +42,7 @@ def compute_portfolio_value(holdings: list[dict]) -> dict:
         }
 
     tickers = list({h["ticker"] for h in holdings})
-    prices = get_prices(tickers, period="2y")
+    prices = get_prices(tickers, period="3y")
 
     # Per-holding breakdown
     rows: list[dict] = []

@@ -69,8 +69,8 @@ if "holdings" not in st.session_state: st.session_state["holdings"] = []
 with st.sidebar:
     st.markdown("### COMMAND CENTER")
     capital = st.number_input(
-        "CAPITAL ($)", min_value=1_000, max_value=10_000_000,
-        value=50_000, step=1_000, format="%d",
+        "CAPITAL ($)", min_value=100, max_value=10_000_000,
+        value=50_000, step=100, format="%d",
     )
     risk = st.select_slider("RISK LEVEL", options=["LOW", "MEDIUM", "HIGH"], value="MEDIUM")
     st.markdown("---")
@@ -252,6 +252,63 @@ with c4: colored_metric("SHARPE",       f"{opt['sharpe']:.2f}",         round(op
 with c5: colored_metric("MAX DRAWDOWN", f"{opt['max_drawdown']:.1%}",   opt["max_drawdown"] * 100)
 
 
+# ── Macro Signals ─────────────────────────────────────────────────────────────
+with st.container(border=True):
+    panel_header("MACRO SIGNALS", "VIX · Sector Rotation · Earnings Calendar")
+    vix_col, sector_col, earn_col = st.columns([0.7, 1.6, 1.2])
+
+    with vix_col:
+        vix = result.get("vix", {})
+        if vix:
+            vix_color = _RED if vix["regime"] == "high" else _AMBER if vix["regime"] == "elevated" else _GREEN
+            st.markdown("**VIX — FEAR INDEX**")
+            st.markdown(
+                f"<span style='color:{vix_color}; font-size:2.4em; font-weight:bold'>"
+                f"{vix['level']:.1f}</span>",
+                unsafe_allow_html=True,
+            )
+            st.caption(f"{vix['regime'].upper()} · {vix['trend']}")
+            st.caption(f"1 month ago: {vix['month_ago']:.1f}")
+            st.caption("< 18 = calm · 18–25 = elevated · > 25 = fear")
+        else:
+            st.caption("VIX unavailable")
+
+    with sector_col:
+        sector_df_display = result.get("sector_momentum")
+        if sector_df_display is not None and not sector_df_display.empty:
+            panel_header("SECTOR MOMENTUM", "1-Month Return")
+            colors = [_GREEN if r >= 0 else _RED for r in sector_df_display["return_1m_%"]]
+            fig_sec = go.Figure(go.Bar(
+                x=sector_df_display["return_1m_%"],
+                y=sector_df_display["sector"],
+                orientation="h",
+                marker_color=colors,
+                text=[f"{r:+.1f}%" for r in sector_df_display["return_1m_%"]],
+                textposition="outside",
+                hovertemplate="%{y}: %{x:.1f}%<extra></extra>",
+            ))
+            fig_sec.update_layout(
+                height=280,
+                paper_bgcolor=_BG, plot_bgcolor=_PANEL,
+                font=dict(family=_FONT, color=_TEXT, size=10),
+                margin=dict(l=10, r=70, t=10, b=10),
+                xaxis=dict(gridcolor=_GRID, zeroline=True, zerolinecolor=_GRID),
+                yaxis=dict(gridcolor=_GRID),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_sec)
+        else:
+            st.caption("Sector momentum unavailable")
+
+    with earn_col:
+        earn_df_display = result.get("earnings_calendar")
+        if earn_df_display is not None and not earn_df_display.empty:
+            panel_header("EARNINGS CALENDAR", "Next report dates")
+            st.dataframe(earn_df_display, hide_index=True, width="stretch")
+        else:
+            st.caption("No upcoming earnings found")
+
+
 # ── Recommendations ────────────────────────────────────────────────────────────
 st.markdown("")
 with st.container(border=True):
@@ -346,20 +403,27 @@ with st.container(border=True):
 
 # ── Row 6: News & sentiment ────────────────────────────────────────────────────
 with st.container(border=True):
-    panel_header("NEWS & SENTIMENT", "Finnhub — top equity holdings")
-    if result["news"].empty:
+    panel_header("NEWS & SENTIMENT", "Finnhub — 30-day window · all portfolio positions · macro headlines")
+    macro_news = result.get("macro_news") or pd.DataFrame()
+    if result["news"].empty and macro_news.empty:
         st.caption("Set FINNHUB_API_KEY in .env to enable live news and sentiment.")
     else:
         sent_df = result.get("sentiment")
         if sent_df is not None and not sent_df.empty:
             st.dataframe(sent_df, width="stretch", hide_index=True)
-        tickers_with_news = result["news"]["ticker"].unique().tolist()
-        if tickers_with_news:
-            tabs = st.tabs(tickers_with_news)
-            for tab, t in zip(tabs, tickers_with_news):
+        tickers_with_news = result["news"]["ticker"].unique().tolist() if not result["news"].empty else []
+        tab_names = tickers_with_news + (["MACRO NEWS"] if not macro_news.empty else [])
+        if tab_names:
+            tabs = st.tabs(tab_names)
+            for tab, t in zip(tabs[:len(tickers_with_news)], tickers_with_news):
                 with tab:
                     df_t = result["news"][result["news"]["ticker"] == t]
                     st.dataframe(df_t[["datetime", "headline", "source"]],
+                                 width="stretch", hide_index=True)
+            if not macro_news.empty:
+                with tabs[-1]:
+                    st.caption("Macro & geopolitical headlines — Fed, CPI, tariffs, geopolitics")
+                    st.dataframe(macro_news[["datetime", "headline", "source"]],
                                  width="stretch", hide_index=True)
 
 

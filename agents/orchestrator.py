@@ -1,5 +1,5 @@
 """
-agents.orchestrator — full pipeline: fetch → metrics → allocate → news → reason.
+agents.orchestrator — full pipeline: prices → signals → sentiment → allocate → metrics.
 
 Entry point: run_pipeline(tickers, capital, risk_level, ...)
 Returns a single dict consumed by app.py — one call per dashboard refresh.
@@ -11,16 +11,19 @@ import numpy as np
 import pandas as pd
 
 from data.fetch import get_prices
-from data.bonds import get_bond_etf_prices, get_yield_curve, BOND_ETFS
+from data.bonds import get_yield_curve, BOND_ETFS
 from data.news import get_news, sentiment_summary
+from data.macro import (
+    get_vix, get_sector_momentum, get_earnings_calendar, get_macro_news,
+    TICKER_TO_SECTOR_ETF,
+)
 from metrics.returns import daily_returns, cumulative_returns
-from metrics.risk import sharpe, sortino, calmar, max_drawdown, correlation_matrix
+from metrics.risk import sharpe, sortino, max_drawdown, correlation_matrix
 from allocation.optimizer import allocate, efficient_frontier
 
 TRADING_DAYS = 252
 
-# Default universe covers six asset classes so the optimizer has real diversification
-# to work with out of the box. User can add/remove tickers in the sidebar.
+# Default universe: six asset classes so the optimizer has real diversification.
 DEFAULT_EQUITIES = [
     # US equities
     "AAPL", "MSFT", "NVDA",
@@ -61,7 +64,6 @@ def _ticker_metrics(r: pd.Series) -> dict:
 
 
 def _weighted_port_returns(returns_df: pd.DataFrame, weights: dict[str, float]) -> pd.Series:
-    """Daily portfolio return stream given a weight dict."""
     cols = [t for t in weights if t in returns_df.columns]
     w = np.array([weights[t] for t in cols])
     w = w / w.sum()
@@ -79,30 +81,21 @@ def run_pipeline(
     refresh: bool = False,
 ) -> dict:
     """
-    Full data → metrics → allocate → news → reasoning pipeline.
+    Full pipeline. Signal order matters — news/macro fetched before allocation
+    so sentiment and sector momentum can tilt expected returns.
 
     Returns dict with keys:
-        allocation      DataFrame [ticker, weight_%, dollars]
-        metrics         DataFrame per-ticker risk/return
-        frontier        DataFrame [return, volatility, sharpe]
-        corr_matrix     DataFrame pairwise Pearson
-        cum_returns     dict {ticker: pd.Series of cumulative returns}
-        optimal         dict {return, volatility, sharpe, sortino, max_drawdown}
-        yield_curve     DataFrame [maturity, yield_pct] or empty
-        news            DataFrame headlines or empty
-        sentiment       DataFrame per-ticker sentiment summary or empty
-        last_prices     dict {ticker: float}
-        pct_changes     dict {ticker: float}
-        reasoning       list[str]
-        errors          list[str] non-fatal warnings to surface in UI
+        allocation, metrics, frontier, corr_matrix, cum_returns, optimal,
+        yield_curve, news, sentiment, macro_news, vix, sector_momentum,
+        earnings_calendar, last_prices, pct_changes, reasoning, errors
     """
     errors: list[str] = []
     reasoning: list[str] = []
 
-    # ── 1. Fetch prices (equities + bond ETFs) ────────────────────────────────
+    # ── 1. Prices — 3-year window ─────────────────────────────────────────────
     all_tickers = list(dict.fromkeys(tickers + BOND_ETFS))
     try:
-        prices = get_prices(all_tickers, refresh=refresh)
+        prices = get_prices(all_tickers, period="3y", refresh=refresh)
     except Exception as e:
         errors.append(f"Price fetch failed: {e}")
         prices = {}
@@ -111,51 +104,117 @@ def run_pipeline(
     if not close_map:
         raise ValueError("No price data available. Check ticker symbols and network.")
 
-    # ── 2. Build aligned daily returns DataFrame ──────────────────────────────
+    # ── 2. Daily returns ──────────────────────────────────────────────────────
     returns_raw = {t: daily_returns(s) for t, s in close_map.items() if len(s) > 5}
     if not returns_raw:
         raise ValueError("Insufficient price history to compute returns.")
-
     returns_df = pd.DataFrame(returns_raw).dropna()
-    available = list(returns_df.columns)
+    available  = list(returns_df.columns)
     reasoning.append(f"> LOADED: {len(available)} assets — {', '.join(available)}")
+    reasoning.append(f"> LOOKBACK: 3 years  ({len(returns_df)} trading days)")
 
-    # ── 3. Allocation ─────────────────────────────────────────────────────────
+    # ── 3. VIX & sector momentum ──────────────────────────────────────────────
     try:
-        alloc_df = allocate(returns_df, capital, risk_level)
+        vix_info = get_vix()
+    except Exception as e:
+        errors.append(f"VIX fetch error: {e}")
+        vix_info = {}
+
+    try:
+        sector_df = get_sector_momentum()
+    except Exception as e:
+        errors.append(f"Sector momentum error: {e}")
+        sector_df = pd.DataFrame(columns=["ticker", "sector", "return_1m_%"])
+
+    sector_returns: dict[str, float] = (
+        dict(zip(sector_df["ticker"], sector_df["return_1m_%"]))
+        if not sector_df.empty else {}
+    )
+    vix_regime = vix_info.get("regime", "low")
+
+    if vix_info:
+        reasoning.append(
+            f"> VIX: {vix_info['level']:.1f} ({vix_info['regime'].upper()}) — "
+            f"trend {vix_info['trend']}, was {vix_info['month_ago']:.1f} a month ago"
+        )
+    if sector_returns:
+        top_sector = max(sector_returns, key=sector_returns.get)
+        bot_sector = min(sector_returns, key=sector_returns.get)
+        reasoning.append(
+            f"> SECTOR: leading={top_sector} ({sector_returns[top_sector]:+.1f}%)  "
+            f"lagging={bot_sector} ({sector_returns[bot_sector]:+.1f}%)"
+        )
+
+    # ── 4. News & sentiment — 30-day window, all equity tickers ──────────────
+    equity_tickers = [t for t in tickers if t not in BOND_ETFS]
+    try:
+        news_df      = get_news(equity_tickers, api_key=finnhub_key, days_back=30)
+        sentiment_df = sentiment_summary(news_df)
+    except Exception as e:
+        errors.append(f"News fetch error: {e}")
+        news_df      = pd.DataFrame()
+        sentiment_df = pd.DataFrame()
+
+    sentiment_map: dict[str, str] = {}
+    if sentiment_df is not None and not sentiment_df.empty and "signal" in sentiment_df.columns:
+        sentiment_map = dict(zip(sentiment_df["ticker"], sentiment_df["signal"]))
+        for t, sig in sentiment_map.items():
+            if sig in ("BULLISH", "BEARISH"):
+                reasoning.append(f"> SENTIMENT: {t} → {sig}")
+
+    # ── 5. Macro news ─────────────────────────────────────────────────────────
+    try:
+        macro_news_df = get_macro_news(finnhub_key or "", days_back=14)
+    except Exception as e:
+        errors.append(f"Macro news error: {e}")
+        macro_news_df = pd.DataFrame()
+
+    # ── 6. Allocation (signal-adjusted expected returns) ─────────────────────
+    signals_active = bool(sentiment_map or sector_returns) and risk_level != "LOW"
+    try:
+        alloc_df = allocate(
+            returns_df, capital, risk_level,
+            sentiment_map=sentiment_map,
+            vix_regime=vix_regime,
+            sector_returns=sector_returns,
+            ticker_to_sector=TICKER_TO_SECTOR_ETF,
+        )
         opt_weights = dict(zip(alloc_df["ticker"], alloc_df["weight_%"] / 100))
     except Exception as e:
         errors.append(f"Optimizer error (falling back to equal weight): {e}")
         n = len(available)
         alloc_df = pd.DataFrame({
-            "ticker": available,
+            "ticker":   available,
             "weight_%": [round(100 / n, 1)] * n,
-            "dollars": [int(round(capital / n))] * n,
+            "dollars":  [int(round(capital / n))] * n,
         })
         opt_weights = {t: 1 / n for t in available}
 
     optimizer_label = {
         "LOW": "MIN-VARIANCE", "HIGH": "MAX-SHARPE", "MEDIUM": "BLENDED (50/50)",
     }.get(risk_level, risk_level)
-    reasoning.append(f"> RISK: {risk_level}  OPTIMIZER: {optimizer_label}")
+    reasoning.append(
+        f"> RISK: {risk_level}  OPTIMIZER: {optimizer_label}"
+        + ("  + SIGNAL OVERLAY (sentiment + sector momentum)" if signals_active else "")
+    )
     for _, row in alloc_df.iterrows():
         reasoning.append(
             f">   {row['ticker']:<8}  {row['weight_%']:>5.1f}%   ${row['dollars']:>10,.0f}"
         )
 
-    # ── 4. Efficient frontier ─────────────────────────────────────────────────
+    # ── 7. Efficient frontier ─────────────────────────────────────────────────
     try:
         frontier_df = efficient_frontier(returns_df)
     except Exception as e:
         errors.append(f"Frontier error: {e}")
         frontier_df = pd.DataFrame(columns=["return", "volatility", "sharpe"])
 
-    # ── 5. Per-asset metrics ──────────────────────────────────────────────────
+    # ── 8. Per-asset metrics ──────────────────────────────────────────────────
     metrics_df = pd.DataFrame(
         {t: _ticker_metrics(returns_df[t]) for t in available}
     ).T
 
-    # ── 6. Portfolio-level metrics ────────────────────────────────────────────
+    # ── 9. Portfolio-level metrics ────────────────────────────────────────────
     port_r = _weighted_port_returns(returns_df, opt_weights)
     n_days = len(port_r)
     optimal = {
@@ -172,14 +231,16 @@ def run_pipeline(
         f"MDD={optimal['max_drawdown']:.1%}"
     )
 
-    # ── 7. Correlation matrix ─────────────────────────────────────────────────
+    # ── 10. Correlation matrix ────────────────────────────────────────────────
     corr = correlation_matrix(returns_df)
 
-    # ── 8. Cumulative returns ─────────────────────────────────────────────────
-    cum_returns: dict[str, pd.Series] = {t: cumulative_returns(returns_df[t]) for t in available}
+    # ── 11. Cumulative returns ────────────────────────────────────────────────
+    cum_returns: dict[str, pd.Series] = {
+        t: cumulative_returns(returns_df[t]) for t in available
+    }
     cum_returns["PORTFOLIO"] = cumulative_returns(port_r)
 
-    # ── 9. Last prices + 1-day pct change for ticker tape ────────────────────
+    # ── 12. Last prices + 1-day pct change ───────────────────────────────────
     last_prices = {t: float(s.iloc[-1]) for t, s in close_map.items() if t in available}
     pct_changes = {
         t: round((float(s.iloc[-1]) - float(s.iloc[-2])) / float(s.iloc[-2]) * 100, 2)
@@ -187,35 +248,36 @@ def run_pipeline(
         if t in available and len(s) >= 2
     }
 
-    # ── 10. Yield curve ───────────────────────────────────────────────────────
+    # ── 13. Yield curve ───────────────────────────────────────────────────────
     try:
         yield_df = get_yield_curve(api_key=fred_key)
     except Exception as e:
         errors.append(f"FRED yield curve error: {e}")
         yield_df = pd.DataFrame(columns=["maturity", "yield_pct"])
 
-    # ── 11. News & sentiment ──────────────────────────────────────────────────
-    equity_tickers = [t for t in alloc_df["ticker"] if t not in BOND_ETFS][:4]
+    # ── 14. Earnings calendar ─────────────────────────────────────────────────
     try:
-        news_df = get_news(equity_tickers, api_key=finnhub_key)
-        sentiment_df = sentiment_summary(news_df)
+        earnings_df = get_earnings_calendar(equity_tickers)
     except Exception as e:
-        errors.append(f"News fetch error: {e}")
-        news_df = pd.DataFrame()
-        sentiment_df = pd.DataFrame()
+        errors.append(f"Earnings calendar error: {e}")
+        earnings_df = pd.DataFrame(columns=["ticker", "earnings_date", "days_until"])
 
     return {
-        "allocation":   alloc_df,
-        "metrics":      metrics_df,
-        "frontier":     frontier_df,
-        "corr_matrix":  corr,
-        "cum_returns":  cum_returns,
-        "optimal":      optimal,
-        "yield_curve":  yield_df,
-        "news":         news_df,
-        "sentiment":    sentiment_df,
-        "last_prices":  last_prices,
-        "pct_changes":  pct_changes,
-        "reasoning":    reasoning,
-        "errors":       errors,
+        "allocation":        alloc_df,
+        "metrics":           metrics_df,
+        "frontier":          frontier_df,
+        "corr_matrix":       corr,
+        "cum_returns":       cum_returns,
+        "optimal":           optimal,
+        "yield_curve":       yield_df,
+        "news":              news_df,
+        "sentiment":         sentiment_df,
+        "macro_news":        macro_news_df,
+        "vix":               vix_info,
+        "sector_momentum":   sector_df,
+        "earnings_calendar": earnings_df,
+        "last_prices":       last_prices,
+        "pct_changes":       pct_changes,
+        "reasoning":         reasoning,
+        "errors":            errors,
     }
