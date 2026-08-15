@@ -145,44 +145,74 @@ def generate(
     capital: float,
     risk_level: str,
     sentiment_df: pd.DataFrame | None = None,
+    universe_tickers: list[str] | None = None,
 ) -> list[dict]:
     """
-    Generate one recommendation card per position, sorted by weight descending.
+    Generate one recommendation card per asset in the universe.
+
+    Allocated assets appear first (sorted by weight desc).
+    Remaining universe assets follow (sorted by Sharpe desc) so the user
+    always sees all available options, not just what the optimizer picked.
 
     Returns list of dicts with keys:
-        rank, ticker, weight_pct, dollars, asset_class, description,
-        explanation, sharpe, ann_return_pct, max_dd_pct, sentiment
+        rank, ticker, weight_%, dollars, asset_class, description,
+        explanation, sharpe, ann_return_%, max_dd_%, sentiment, allocated
     """
-    all_tickers = list(allocation_df["ticker"])
+    allocated_set = set(allocation_df["ticker"].tolist()) if not allocation_df.empty else set()
+    weight_map  = dict(zip(allocation_df["ticker"], allocation_df["weight_%"])) if not allocation_df.empty else {}
+    dollar_map  = dict(zip(allocation_df["ticker"], allocation_df["dollars"]))  if not allocation_df.empty else {}
+
+    # Full set to score: universe first, then anything in allocation not already there
+    base = list(universe_tickers) if universe_tickers else list(allocation_df["ticker"])
+    extra = [t for t in allocation_df["ticker"] if t not in base]
+    all_scored = base + extra
 
     sentiment_map: dict[str, str] = {}
     if sentiment_df is not None and not sentiment_df.empty and "signal" in sentiment_df.columns:
         sentiment_map = dict(zip(sentiment_df["ticker"], sentiment_df["signal"]))
 
+    def _sharpe(t: str) -> float:
+        return metrics_df.loc[t, "sharpe"] if t in metrics_df.index else 0.0
+
+    # Allocated first (optimizer order), then unallocated by Sharpe desc
+    ordered = (
+        [t for t in all_scored if t in allocated_set]
+        + sorted([t for t in all_scored if t not in allocated_set], key=_sharpe, reverse=True)
+    )
+
     cards: list[dict] = []
-    for rank, (_, row) in enumerate(allocation_df.iterrows(), start=1):
-        ticker = row["ticker"]
-        weight = float(row["weight_%"])
-        dollars = int(row["dollars"])
+    for rank, ticker in enumerate(ordered, start=1):
+        allocated = ticker in allocated_set
+        weight  = weight_map.get(ticker, 0.0)
+        dollars = dollar_map.get(ticker, 0)
         asset_class, description = ASSET_INFO.get(ticker, ("Asset", ticker))
         m = metrics_df.loc[ticker].to_dict() if ticker in metrics_df.index else {}
 
+        explanation = _explain(
+            ticker, weight, m, corr_matrix,
+            list(all_scored), risk_level,
+            sentiment_map.get(ticker, ""),
+        )
+        if not allocated:
+            explanation = (
+                f"Not selected by the optimizer at {risk_level} risk — "
+                f"its risk/return profile didn't improve the portfolio at this setting. "
+                + explanation
+            )
+
         cards.append({
-            "rank": rank,
-            "ticker": ticker,
-            "weight_%": weight,
-            "dollars": dollars,
-            "asset_class": asset_class,
-            "description": description,
-            "explanation": _explain(
-                ticker, weight, m, corr_matrix,
-                all_tickers, risk_level,
-                sentiment_map.get(ticker, ""),
-            ),
-            "sharpe": round(m.get("sharpe", 0.0), 2),
+            "rank":         rank,
+            "ticker":       ticker,
+            "weight_%":     float(weight),
+            "dollars":      int(dollars),
+            "asset_class":  asset_class,
+            "description":  description,
+            "explanation":  explanation,
+            "sharpe":       round(m.get("sharpe", 0.0), 2),
             "ann_return_%": round(m.get("ann_return_%", 0.0), 1),
-            "max_dd_%": round(m.get("max_dd_%", 0.0), 1),
-            "sentiment": sentiment_map.get(ticker, ""),
+            "max_dd_%":     round(m.get("max_dd_%", 0.0), 1),
+            "sentiment":    sentiment_map.get(ticker, ""),
+            "allocated":    allocated,
         })
 
     return cards

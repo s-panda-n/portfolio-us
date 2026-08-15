@@ -315,25 +315,34 @@ with st.container(border=True):
     panel_header("YOUR PORTFOLIO — EXPLAINED", "Plain-English reasoning for every position")
     st.caption(RISK_CONTEXT.get(risk, ""))
 
+    # Full equity universe — all assets scored, not just what optimizer allocated
+    _universe = [t for t in result["metrics"].index.tolist() if t not in set(BOND_ETFS)]
     cards = gen_recommendations(
         result["allocation"], result["metrics"], result["corr_matrix"],
         capital, risk, result.get("sentiment"),
+        universe_tickers=_universe,
     )
 
     # If user has holdings, flag positions that already have large exposure
     current_w = pdata["weights"] if st.session_state["holdings"] else {}
 
     for card in cards:
+        is_allocated = card.get("allocated", True)
         with st.container(border=True):
             meta_col, text_col = st.columns([1, 3])
             with meta_col:
-                pnl_delta = card["ann_return_%"]
+                label = f"#{card['rank']}  {card['ticker']}"
+                value = (
+                    f"{card['weight_%']:.1f}%  ·  ${card['dollars']:,}"
+                    if is_allocated else "—  not allocated"
+                )
                 st.metric(
-                    f"#{card['rank']}  {card['ticker']}",
-                    f"{card['weight_%']:.1f}%  ·  ${card['dollars']:,}",
+                    label, value,
                     delta=f"{card['ann_return_%']:+.1f}% ann." if card["ann_return_%"] != 0 else None,
                 )
                 st.caption(card["asset_class"])
+                if not is_allocated:
+                    st.caption("⬡ Not in optimal portfolio")
                 if card["sentiment"] == "BULLISH":
                     st.success("● BULLISH")
                 elif card["sentiment"] == "BEARISH":
@@ -347,7 +356,7 @@ with st.container(border=True):
                 st.markdown(card["explanation"])
                 k1, k2, k3 = st.columns(3)
                 k1.metric("Sharpe",    card["sharpe"])
-                k2.metric("1Y Return", f"{card['ann_return_%']:.1f}%")
+                k2.metric("3Y Return", f"{card['ann_return_%']:.1f}%")
                 k3.metric("Max DD",    f"{card['max_dd_%']:.1f}%")
 
 
@@ -404,7 +413,7 @@ with st.container(border=True):
 # ── Row 6: News & sentiment ────────────────────────────────────────────────────
 with st.container(border=True):
     panel_header("NEWS & SENTIMENT", "Finnhub — 30-day window · all portfolio positions · macro headlines")
-    macro_news = result.get("macro_news") or pd.DataFrame()
+    macro_news = result.get("macro_news", pd.DataFrame())
     if result["news"].empty and macro_news.empty:
         st.caption("Set FINNHUB_API_KEY in .env to enable live news and sentiment.")
     else:

@@ -25,10 +25,10 @@ TRADING_DAYS = 252
 
 # Default universe: six asset classes so the optimizer has real diversification.
 DEFAULT_EQUITIES = [
-    # US equities
-    "AAPL", "MSFT", "NVDA",
-    # Broad US market ETF
-    "SPY",
+    # US mega-cap tech / growth
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META",
+    # Broad US market ETFs
+    "SPY", "QQQ",
     # International developed markets
     "EFA",
     # Emerging markets
@@ -39,6 +39,8 @@ DEFAULT_EQUITIES = [
     "GLD",
     # Commodities basket
     "GSG",
+    # Financials / value
+    "JPM",
 ]
 
 
