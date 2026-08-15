@@ -1,6 +1,7 @@
 # Project-specific
 port-env/
 data/.cache/
+data/.holdings.json
 .env
 
 # Byte-compiled / optimized / DLL files
