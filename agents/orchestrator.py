@@ -18,7 +18,25 @@ from metrics.risk import sharpe, sortino, calmar, max_drawdown, correlation_matr
 from allocation.optimizer import allocate, efficient_frontier
 
 TRADING_DAYS = 252
-DEFAULT_EQUITIES = ["AAPL", "MSFT", "GOOGL", "NVDA", "SPY", "QQQ"]
+
+# Default universe covers six asset classes so the optimizer has real diversification
+# to work with out of the box. User can add/remove tickers in the sidebar.
+DEFAULT_EQUITIES = [
+    # US equities
+    "AAPL", "MSFT", "NVDA",
+    # Broad US market ETF
+    "SPY",
+    # International developed markets
+    "EFA",
+    # Emerging markets
+    "EEM",
+    # Real estate (REITs)
+    "VNQ",
+    # Gold
+    "GLD",
+    # Commodities basket
+    "GSG",
+]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

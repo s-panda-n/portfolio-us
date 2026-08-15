@@ -68,7 +68,7 @@ with st.sidebar:
         new_ticker = st.text_input("ticker", placeholder="e.g. TSLA",
                                    label_visibility="collapsed")
     with btn_col:
-        if st.button("ADD", use_container_width=True) and new_ticker:
+        if st.button("ADD", width="stretch") and new_ticker:
             t = new_ticker.strip().upper()
             if t not in st.session_state["tickers"]:
                 st.session_state["tickers"].append(t)
@@ -82,7 +82,7 @@ with st.sidebar:
             st.rerun()
 
     st.markdown("---")
-    if st.button("▶ RUN / REFRESH", use_container_width=True):
+    if st.button("▶ RUN / REFRESH", width="stretch"):
         st.session_state["refresh"] = True
         st.cache_data.clear()
         st.rerun()
@@ -169,42 +169,30 @@ col_a, col_b, col_c = st.columns([1.1, 1.2, 1.1])
 with col_a:
     with st.container(border=True):
         panel_header("ALLOCATION", f"{risk}  |  ${capital:,.0f}")
-        st.dataframe(result["allocation"], use_container_width=True, hide_index=True)
-        st.plotly_chart(
-            allocation_bar_chart(result["allocation"]),
-            use_container_width=True,
-        )
+        st.dataframe(result["allocation"], width="stretch", hide_index=True)
+        st.plotly_chart(allocation_bar_chart(result["allocation"]))
 
 with col_b:
     with st.container(border=True):
         panel_header("EFFICIENT FRONTIER", "Monte-Carlo  ★ = optimal")
-        st.plotly_chart(
-            efficient_frontier_chart(result["frontier"], result["optimal"]),
-            use_container_width=True,
-        )
+        st.plotly_chart(efficient_frontier_chart(result["frontier"], result["optimal"]))
 
 with col_c:
     with st.container(border=True):
         panel_header("CORRELATION MATRIX", "Pairwise Pearson")
-        st.plotly_chart(
-            correlation_heatmap(result["corr_matrix"]),
-            use_container_width=True,
-        )
+        st.plotly_chart(correlation_heatmap(result["corr_matrix"]))
 
 
 # ── Row 3: Cumulative returns ─────────────────────────────────────────────────
 with st.container(border=True):
     panel_header("CUMULATIVE RETURNS", "PORTFOLIO = weighted blend")
-    st.plotly_chart(
-        cumulative_returns_chart(result["cum_returns"]),
-        use_container_width=True,
-    )
+    st.plotly_chart(cumulative_returns_chart(result["cum_returns"]))
 
 
 # ── Row 4: Asset metrics table ────────────────────────────────────────────────
 with st.container(border=True):
     panel_header("ASSET METRICS", "Per-ticker risk / return")
-    st.dataframe(result["metrics"], use_container_width=True)
+    st.dataframe(result["metrics"], width="stretch")
 
 
 # ── Row 5: Fixed income ───────────────────────────────────────────────────────
@@ -215,16 +203,13 @@ with st.container(border=True):
     with bond_col:
         bond_rows = [t for t in BOND_ETFS if t in result["metrics"].index]
         if bond_rows:
-            st.dataframe(result["metrics"].loc[bond_rows], use_container_width=True)
+            st.dataframe(result["metrics"].loc[bond_rows], width="stretch")
         else:
             st.caption("Bond ETF data unavailable.")
 
     with yield_col:
         if not result["yield_curve"].empty:
-            st.plotly_chart(
-                yield_curve_chart(result["yield_curve"]),
-                use_container_width=True,
-            )
+            st.plotly_chart(yield_curve_chart(result["yield_curve"]))
         else:
             st.info("Set FRED_API_KEY in .env to display the live US Treasury yield curve.")
 
@@ -238,7 +223,7 @@ with st.container(border=True):
     else:
         sent_df = result.get("sentiment")
         if sent_df is not None and not sent_df.empty:
-            st.dataframe(sent_df, use_container_width=True, hide_index=True)
+            st.dataframe(sent_df, width="stretch", hide_index=True)
 
         tickers_with_news = result["news"]["ticker"].unique().tolist()
         if tickers_with_news:
@@ -249,7 +234,7 @@ with st.container(border=True):
                     df_t = result["news"][result["news"]["ticker"] == t]
                     st.dataframe(
                         df_t[["datetime", "headline", "source"]],
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                     )
 
