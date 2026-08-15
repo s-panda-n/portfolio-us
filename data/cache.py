@@ -21,6 +21,9 @@ def load(ticker: str) -> pd.DataFrame | None:
 
 
 def save(ticker: str, df: pd.DataFrame) -> None:
-    """Write DataFrame to cache, creating the directory if needed."""
-    CACHE_DIR.mkdir(exist_ok=True)
-    df.to_csv(CACHE_DIR / f"{ticker}.csv")
+    """Write DataFrame to cache. Silent no-op on read-only filesystems (e.g. Streamlit Cloud)."""
+    try:
+        CACHE_DIR.mkdir(exist_ok=True)
+        df.to_csv(CACHE_DIR / f"{ticker}.csv")
+    except OSError:
+        pass
